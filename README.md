@@ -45,3 +45,12 @@ This is a **single-browser local demo**, not production-ready POS software. Data
 ### POS feature research
 
 The feature direction was informed by product documentation for [Shopify POS](https://help.shopify.com/en/manual/sell-in-person/shopify-pos), [Lightspeed Retail](https://www.lightspeedhq.com/pos/retail/features/) and [Square item modifiers](https://squareup.com/help/us/en/article/5119-create-and-manage-item-modifiers). Planned future modules include supplier purchase orders, returns/refunds, customer profiles, roles/permissions and cloud inventory synchronization; **these are not yet implemented**.
+
+## Barcode scanners & POS hardware (v1.3)
+
+- **USB / Bluetooth scanner:** Configure your scanner to **USB HID / keyboard wedge** mode and to append **Enter (CR)** after every scan. On the POS screen use the dedicated barcode field (or press **F2** to focus it). Products are matched by exact `barcode` or `sku`, and one unit is added per valid scan. Press **F4** to search product names manually.
+- **Barcode setup:** Add products under Inventory and enter their barcode values. Test a scan in Notepad: it should type the code and end with Enter. Bluetooth scanners must first be paired in the device operating system.
+- **Receipts:** Use Print / Save PDF and your device's installed printer driver. An 80mm paper rule is included in the printable bill; review margins and paper settings in the browser print dialog. Silent printing, automatic cash drawer opening, and raw ESC/POS control are **not implemented**.
+- **POS terminals and tablets:** Works as a responsive web interface in modern browsers. Touchscreen operation is supported by ordinary browser buttons, subject to the device/browser. Printer, scanner and payment-terminal compatibility varies by model, firmware, OS and browser.
+- **Payment terminals:** The `Card` payment option is record-keeping only. It does **not** charge a bank card or connect to an EFTPOS terminal. Payment processing requires a supported certified payment provider integration.
+- **Storage caution:** Sales and stock are browser-local, **not synchronized between multiple devices**. Do not run separate cashiers as though they share stock. A cloud database, account-based access, synchronization and backups are required for multi-register commercial use.
