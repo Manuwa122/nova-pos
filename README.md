@@ -30,3 +30,18 @@ Open `index.html` in a modern browser, or run `python -m http.server 8000` and v
 
 ## Important limitation
 This is a **single-browser local demo**, not production-ready POS software. Data lives in browser localStorage and does **not** synchronize across devices; clearing browser data deletes local records unless backed up. No user authentication, server-side audit trails, real payment gateway, fiscal compliance, or multi-cashier access. Payments are only **recorded**, never processed. For production use add a secure database (e.g. Postgres), auth/roles, server-validated order logic, device synchronization, backups and receipt/legal requirements before use.
+
+## v1.2 — Shop branding & advanced receipts
+
+- Shop profile: name, contact phone, email, postal address and thank-you message.
+- Automatic deterministic SVG shop logo based on the shop name (no external AI service, assets or logo upload required).
+- Itemized print/PDF-friendly receipt with invoice number, date, payment method, products, quantity, unit price, line totals, order discount, configured tax, total, amount received and change.
+- Sale-time shop information is preserved on new sales for consistent historical receipts.
+- Product SKU/barcode fields and search by name or code. Barcode readers that act as keyboards may enter codes through the search field; camera scanning is not yet implemented.
+- Percentage order discounts, printed and stored per sale. There is no integrated bank/card payment processing.
+
+**Limitations:** Demonstration with browser-local data only. Changing computers or browsers does not synchronize transactions. User permissions, refunds, suppliers, accounting, payment integrations, and fiscal/tax compliance require further work. Sample products are illustrative, not a real inventory. Receipt tax is configurable and not legal/tax advice.
+
+### POS feature research
+
+The feature direction was informed by product documentation for [Shopify POS](https://help.shopify.com/en/manual/sell-in-person/shopify-pos), [Lightspeed Retail](https://www.lightspeedhq.com/pos/retail/features/) and [Square item modifiers](https://squareup.com/help/us/en/article/5119-create-and-manage-item-modifiers). Planned future modules include supplier purchase orders, returns/refunds, customer profiles, roles/permissions and cloud inventory synchronization; **these are not yet implemented**.
