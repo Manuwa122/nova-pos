@@ -145,6 +145,8 @@ async function openCameraScanner(){
  <p>Choose a camera, then press Start. Close other apps using your webcam first.</p>
  <label class="field">Camera device<select id="camera-choice"><option value="">Loading cameras…</option></select></label>
  <button class="secondary" type="button" id="camera-start">▶ Start / Restart camera</button>
+ <button class="secondary" type="button" id="camera-focus" disabled>◎ Try Autofocus</button>
+ <p id="camera-quality" style="font-size:12px;color:#64748b">Camera quality information will appear here.</p>
  <div id="camera-fallback" style="width:100%;min-height:230px;background:#0f172a;border-radius:12px;overflow:hidden"></div>
  <p id="camera-status" role="status" style="font-size:13px;color:#475569">Preparing camera…</p>
  <div class="field"><label>Manual barcode test</label><input id="camera-manual" placeholder="Enter barcode code"></div>
@@ -153,7 +155,7 @@ async function openCameraScanner(){
  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);
  document.querySelector('#camera-manual-add').onclick=()=>handleCameraCode(document.querySelector('#camera-manual').value);
  document.querySelector('#camera-manual').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();handleCameraCode(e.target.value)}};
- const status=document.querySelector('#camera-status'),select=document.querySelector('#camera-choice'),startButton=document.querySelector('#camera-start');
+ const status=document.querySelector('#camera-status'),select=document.querySelector('#camera-choice'),startButton=document.querySelector('#camera-start'),focusButton=document.querySelector('#camera-focus'),quality=document.querySelector('#camera-quality');
  let devices=[];
  async function startChosen(){
   if(!document.querySelector('#camera-fallback'))return;
@@ -165,10 +167,15 @@ async function openCameraScanner(){
    html5Scanner=scanner;
    const cameraId=select.value||devices[0]?.id;
    if(!cameraId)throw new Error('Select a camera');
-   await scanner.start(cameraId,{fps:8,aspectRatio:1.333333,disableFlip:false},value=>{if(cameraRunning)handleCameraCode(value)},()=>{});
+   await scanner.start(cameraId,{fps:12,aspectRatio:1.333333,disableFlip:false,videoConstraints:{deviceId:{exact:cameraId},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}}},value=>{if(cameraRunning)handleCameraCode(value)},()=>{});
    cameraRunning=true;
    const video=document.querySelector('#camera-fallback video');
    if(video){video.style.width='100%';video.style.objectFit='contain';video.style.minHeight='200px'}
+   const track=video?.srcObject?.getVideoTracks?.()[0],settings=track?.getSettings?.()||{},capabilities=track?.getCapabilities?.()||{};
+   if(quality)quality.textContent='Actual resolution: '+(settings.width||'?')+' × '+(settings.height||'?')+'. '+(capabilities.focusModes?'Focus modes: '+capabilities.focusModes.join(', '):'No browser-accessible focus controls on this camera.');
+   focusButton.disabled=!track?.applyConstraints||!capabilities.focusModes?.includes('continuous');
+   focusButton.onclick=async()=>{try{await track.applyConstraints({advanced:[{focusMode:'continuous'}]});toast('Continuous autofocus requested')}catch(err){toast('Autofocus not supported: '+err.message)}};
+   if(!focusButton.disabled)focusButton.onclick();
    status.textContent='Camera started: '+(devices.find(d=>d.id===cameraId)?.label||'Selected camera')+'. If picture stays black, select another camera and restart.';
    toast('Camera started');
   }catch(err){cameraRunning=false;status.textContent='Camera error: '+(err?.message||'Unable to open camera')+' — check Windows Camera privacy settings and close Zoom/Teams.'}
