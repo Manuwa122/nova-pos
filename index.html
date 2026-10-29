@@ -90,11 +90,12 @@ function openGatewayWizard(){
  renderStep();
 }
 
-let cameraStream=null,cameraLoop=null,cameraRunning=false,cameraBusy=false,lastCameraCode='',lastCameraAt=0;
+let cameraStream=null,cameraLoop=null,cameraRunning=false,cameraBusy=false,lastCameraCode='',lastCameraAt=0,html5Scanner=null;
 function stopCameraScanner(){
  cameraRunning=false;
  if(cameraLoop){clearTimeout(cameraLoop);cameraLoop=null}
  if(cameraStream){cameraStream.getTracks().forEach(track=>track.stop());cameraStream=null}
+ if(html5Scanner){const scanner=html5Scanner;html5Scanner=null;scanner.stop().catch(()=>{}).finally(()=>scanner.clear().catch(()=>{}))}
 }
 function showDeviceStatus(){
  const camera=!!navigator.mediaDevices?.getUserMedia, detector='BarcodeDetector' in window;
@@ -107,56 +108,83 @@ function showDeviceStatus(){
  <button class="primary" data-close>Close</button>`);
  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);
 }
+async function loadScannerFallback(){
+ if(window.Html5Qrcode)return;
+ await new Promise((resolve,reject)=>{
+  const script=document.createElement('script');
+  script.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+  script.onload=resolve;script.onerror=()=>reject(new Error('Scanner library could not load. Check internet or content blockers.'));
+  document.head.appendChild(script);
+ });
+ if(!window.Html5Qrcode)throw new Error('Scanner library unavailable');
+}
+function handleCameraCode(raw){
+ const code=String(raw||'').trim();if(!code)return;
+ const now=Date.now();if(code===lastCameraCode&&now-lastCameraAt<1700)return;
+ lastCameraCode=code;lastCameraAt=now;
+ const matches=state.products.filter(p=>[p.barcode,p.sku].some(v=>String(v||'').trim().toLowerCase()===code.toLowerCase()));
+ const output=document.querySelector('#camera-status');
+ if(matches.length!==1){if(output)output.textContent=matches.length?'Duplicate barcode: '+code:'Not registered: '+code;return}
+ const p=matches[0];if((cart[p.id]||0)>=p.stock){if(output)output.textContent='Insufficient stock: '+p.name;return}
+ cart[p.id]=(cart[p.id]||0)+1;
+ if(output)output.textContent='✓ '+p.name+' added · Qty '+cart[p.id]+' · Scan next item';
+ toast('✓ '+p.name+' added to bill');
+}
 async function openCameraScanner(){
- if(!navigator.mediaDevices?.getUserMedia){toast('Camera unavailable. Open the HTTPS site in a supported browser.');return}
- if(!('BarcodeDetector' in window)){toast('Camera barcode detection unavailable in this browser. Try Chrome or Edge, or use a HID scanner.');return}
- modal(`<div class="modalhead"><h2>📷 Scan QR or barcode</h2><button class="iconbtn" data-close>×</button></div>
- <p>Point your camera at a product barcode or QR code containing its registered SKU/barcode. Scans add items to the current bill.</p>
- <video id="camera-preview" autoplay muted playsinline style="width:100%;max-height:360px;background:#101827;border-radius:14px;object-fit:cover"></video>
- <p id="camera-status" role="status" style="color:#64748b">Requesting camera permission…</p>
- <button class="secondary" data-close>Stop camera</button>`);
+ if(!navigator.mediaDevices?.getUserMedia){toast('Camera requires HTTPS and browser camera permission');return}
+ modal(`<div class="modalhead"><h2>📷 Scan barcode / QR</h2><button class="iconbtn" data-close>×</button></div>
+ <p>Point your camera at a registered product barcode or QR code. Matching products are added automatically.</p>
+ <div id="camera-scanner-area" style="width:100%;min-height:220px;background:#0f172a;border-radius:12px;overflow:hidden">
+ <video id="camera-preview" autoplay muted playsinline style="display:none;width:100%;max-height:360px;object-fit:cover"></video>
+ <div id="camera-fallback" style="width:100%"></div></div>
+ <p id="camera-status" role="status" style="font-size:13px;color:#475569">Starting camera…</p>
+ <button class="secondary" data-close>Stop camera / Return to bill</button>`);
  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);
+ const status=document.querySelector('#camera-status');
  try{
-  const formats=await BarcodeDetector.getSupportedFormats();
-  const wanted=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','code_93','itf','codabar','qr_code','data_matrix'];
-  const available=wanted.filter(f=>formats.includes(f));
-  if(!available.length)throw new Error('This browser cannot detect common barcodes or QR codes.');
-  const detector=new BarcodeDetector({formats:available});
+  let nativeDetector=null;
+  if('BarcodeDetector' in window){
+   try{
+    const supported=await BarcodeDetector.getSupportedFormats();
+    const formats=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','code_93','itf','codabar','qr_code','data_matrix'].filter(f=>supported.includes(f));
+    if(formats.length)nativeDetector=new BarcodeDetector({formats});
+   }catch{}
+  }
+  if(!document.querySelector('#camera-preview'))return;
+  if(!nativeDetector){
+   if(status)status.textContent='Loading compatible camera scanner…';
+   await loadScannerFallback();
+   if(!document.querySelector('#camera-fallback'))return;
+   const scanner=new Html5Qrcode('camera-fallback',{verbose:false});
+   html5Scanner=scanner;
+   cameraRunning=true;
+   await scanner.start({facingMode:'environment'},{fps:10,qrbox:undefined},decoded=>{if(cameraRunning)handleCameraCode(decoded)},()=>{});
+   if(status)status.textContent='Camera connected · Scanning with compatibility mode';
+   toast('Camera connected');
+   return;
+  }
   const stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'}}});
   if(!document.querySelector('#camera-preview')){stream.getTracks().forEach(t=>t.stop());return}
   cameraStream=stream;cameraRunning=true;
-  const video=document.querySelector('#camera-preview');video.srcObject=stream;await video.play();
-  const status=document.querySelector('#camera-status');
-  if(status)status.textContent='Camera connected · Ready to scan ('+available.join(', ')+')';
+  const video=document.querySelector('#camera-preview');video.style.display='block';video.srcObject=stream;await video.play();
+  if(status)status.textContent='Camera connected · Scanning barcodes and QR codes';
   toast('Camera connected');
   const tick=async()=>{
    if(!cameraRunning)return;
    if(!cameraBusy&&video.readyState>=2){
     cameraBusy=true;
-    try{
-     const results=await detector.detect(video);
-     const code=results[0]?.rawValue;
-     if(code&&!(lastCameraCode===code&&Date.now()-lastCameraAt<1300)){
-      lastCameraCode=code;lastCameraAt=Date.now();
-      const matches=state.products.filter(p=>[p.barcode,p.sku].some(v=>String(v||'').trim().toLowerCase()===code.trim().toLowerCase()));
-      if(matches.length===1){
-       if((cart[matches[0].id]||0)<matches[0].stock){
-        cart[matches[0].id]=(cart[matches[0].id]||0)+1;
-        const output=document.querySelector('#camera-status');
-        if(output)output.textContent='✓ '+matches[0].name+' added · quantity '+cart[matches[0].id];
-        toast('✓ '+matches[0].name+' added');
-       }else{toast('Not enough stock: '+matches[0].name)}
-      }else{const output=document.querySelector('#camera-status');if(output)output.textContent=matches.length?'Duplicate barcode: '+code:'Not registered: '+code}
-     }
-    }catch(err){const output=document.querySelector('#camera-status');if(output)output.textContent='Scanning issue: '+err.message}
+    try{const found=await nativeDetector.detect(video);if(found[0])handleCameraCode(found[0].rawValue)}
+    catch(err){if(status)status.textContent='Scanner error: '+err.message}
     cameraBusy=false;
    }
-   if(cameraRunning)cameraLoop=setTimeout(tick,140);
-  };
-  tick();
- }catch(err){stopCameraScanner();const status=document.querySelector('#camera-status');if(status)status.textContent='Camera error: '+(err?.message||'Permission denied or unsupported');toast('Camera not connected')}
+   if(cameraRunning)cameraLoop=setTimeout(tick,150);
+  };tick();
+ }catch(err){
+  stopCameraScanner();
+  if(status)status.textContent='Camera not available: '+(err?.message||'Permission denied');
+  toast('Camera scanner could not start');
+ }
 }
-
 // Hardware: USB/Bluetooth HID scanners configured as keyboard + Enter.
 // Avoid capturing ordinary typing in forms, and never process checkout/payment from scanner text.
 function scanProduct(raw){
