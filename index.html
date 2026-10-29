@@ -118,13 +118,22 @@ async function loadScannerFallback(){
  });
  if(!window.Html5Qrcode)throw new Error('Scanner library unavailable');
 }
+function normalizeBarcode(v){return String(v??'').trim().replace(/[\u200B-\u200D\uFEFF]/g,'')}
+function findBarcodeProducts(raw){
+ const code=normalizeBarcode(raw).toLowerCase();
+ const variants=new Set([code]);
+ // UPC-A can be reported as EAN-13 with one leading zero, depending on scanner.
+ if(/^0\d{12}$/.test(code))variants.add(code.slice(1));
+ if(/^\d{12}$/.test(code))variants.add('0'+code);
+ return state.products.filter(p=>[p.barcode,p.sku].some(v=>{const k=normalizeBarcode(v).toLowerCase();return k&&variants.has(k)}));
+}
 function handleCameraCode(raw){
  const code=String(raw||'').trim();if(!code)return;
  const now=Date.now();if(code===lastCameraCode&&now-lastCameraAt<1700)return;
  lastCameraCode=code;lastCameraAt=now;
- const matches=state.products.filter(p=>[p.barcode,p.sku].some(v=>String(v||'').trim().toLowerCase()===code.toLowerCase()));
+ const matches=findBarcodeProducts(code);
  const output=document.querySelector('#camera-status');
- if(matches.length!==1){if(output)output.textContent=matches.length?'Duplicate barcode: '+code:'Not registered: '+code;return}
+ if(matches.length!==1){if(output)output.textContent=matches.length?'Duplicate barcode: '+code:'Scanned '+code+' — no matching product. Add this code in Inventory → Edit Product → Barcode.';return}
  const p=matches[0];if((cart[p.id]||0)>=p.stock){if(output)output.textContent='Insufficient stock: '+p.name;return}
  cart[p.id]=(cart[p.id]||0)+1;
  if(output)output.textContent='✓ '+p.name+' added · Qty '+cart[p.id]+' · Scan next item';
