@@ -142,28 +142,49 @@ function handleCameraCode(raw){
 async function openCameraScanner(){
  if(!navigator.mediaDevices?.getUserMedia){toast('Camera requires HTTPS and browser permission');return}
  modal(`<div class="modalhead"><h2>📷 Barcode / QR scanner</h2><button class="iconbtn" data-close>×</button></div>
- <p>Hold a clearly printed barcode steady inside the camera view in good light. Try the back camera first.</p>
+ <p>Choose a camera, then press Start. Close other apps using your webcam first.</p>
+ <label class="field">Camera device<select id="camera-choice"><option value="">Loading cameras…</option></select></label>
+ <button class="secondary" type="button" id="camera-start">▶ Start / Restart camera</button>
  <div id="camera-fallback" style="width:100%;min-height:230px;background:#0f172a;border-radius:12px;overflow:hidden"></div>
- <p id="camera-status" role="status" style="font-size:13px;color:#475569">Loading barcode scanner…</p>
- <div class="field"><label>Manual barcode test (use if camera cannot decode)</label><input id="camera-manual" placeholder="Enter barcode number then tap Add"></div>
+ <p id="camera-status" role="status" style="font-size:13px;color:#475569">Preparing camera…</p>
+ <div class="field"><label>Manual barcode test</label><input id="camera-manual" placeholder="Enter barcode code"></div>
  <button class="secondary" id="camera-manual-add" type="button">Add by code</button>
  <button class="secondary" data-close type="button">Stop camera / View bill</button>`);
  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);
  document.querySelector('#camera-manual-add').onclick=()=>handleCameraCode(document.querySelector('#camera-manual').value);
- const field=document.querySelector('#camera-manual');field.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();handleCameraCode(field.value)}};
- const status=document.querySelector('#camera-status');
+ document.querySelector('#camera-manual').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();handleCameraCode(e.target.value)}};
+ const status=document.querySelector('#camera-status'),select=document.querySelector('#camera-choice'),startButton=document.querySelector('#camera-start');
+ let devices=[];
+ async function startChosen(){
+  if(!document.querySelector('#camera-fallback'))return;
+  startButton.disabled=true;status.textContent='Connecting to selected camera…';
+  try{
+   if(html5Scanner){const previous=html5Scanner;html5Scanner=null;cameraRunning=false;try{await previous.stop()}catch{};try{await previous.clear()}catch{}}
+   document.querySelector('#camera-fallback').innerHTML='';
+   const scanner=new Html5Qrcode('camera-fallback',{verbose:false});
+   html5Scanner=scanner;
+   const cameraId=select.value||devices[0]?.id;
+   if(!cameraId)throw new Error('Select a camera');
+   await scanner.start(cameraId,{fps:8,aspectRatio:1.333333,disableFlip:false},value=>{if(cameraRunning)handleCameraCode(value)},()=>{});
+   cameraRunning=true;
+   const video=document.querySelector('#camera-fallback video');
+   if(video){video.style.width='100%';video.style.objectFit='contain';video.style.minHeight='200px'}
+   status.textContent='Camera started: '+(devices.find(d=>d.id===cameraId)?.label||'Selected camera')+'. If picture stays black, select another camera and restart.';
+   toast('Camera started');
+  }catch(err){cameraRunning=false;status.textContent='Camera error: '+(err?.message||'Unable to open camera')+' — check Windows Camera privacy settings and close Zoom/Teams.'}
+  finally{if(startButton.isConnected)startButton.disabled=false}
+ }
+ startButton.onclick=startChosen;
  try{
   await loadScannerFallback();
-  if(!document.querySelector('#camera-fallback'))return;
-  const scanner=new Html5Qrcode('camera-fallback',{verbose:false});
-  html5Scanner=scanner;cameraRunning=true;
-  const cameras=await Html5Qrcode.getCameras();
-  if(!cameras.length)throw new Error('No camera detected');
-  const rear=cameras.find(c=>/back|rear|environment/i.test(c.label))||cameras[cameras.length-1];
-  await scanner.start(rear.id,{fps:12,qrbox:{width:250,height:180},aspectRatio:1.333334,disableFlip:false},decoded=>{if(cameraRunning)handleCameraCode(decoded)},()=>{});
-  if(status)status.textContent='Scanner ready · Using '+rear.label+' · Aim at barcode';
-  toast('Scanner ready');
- }catch(err){stopCameraScanner();if(status)status.textContent='Scanner could not start: '+(err?.message||'Permission denied');toast('Camera scanner unavailable')}
+  if(!select.isConnected)return;
+  devices=await Html5Qrcode.getCameras();
+  if(!devices.length)throw new Error('No cameras were found');
+  select.innerHTML=devices.map((d,i)=>'<option value="'+esc(d.id)+'">'+esc(d.label||'Camera '+(i+1))+'</option>').join('');
+  const preferred=devices.find(d=>/integrated|webcam|front|usb camera/i.test(d.label))||devices[0];
+  select.value=preferred.id;status.textContent=devices.length+' camera(s) detected';
+  await startChosen();
+ }catch(err){if(status.isConnected)status.textContent='Camera setup failed: '+(err?.message||'Permission blocked')}
 }
 // Hardware: USB/Bluetooth HID scanners configured as keyboard + Enter.
 // Avoid capturing ordinary typing in forms, and never process checkout/payment from scanner text.
